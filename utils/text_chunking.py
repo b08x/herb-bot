@@ -21,9 +21,9 @@ class TextChunker:
 
     def __init__(
         self,
-        chunk_size: int = 1000,
-        chunk_overlap: int = 200,
-        split_by: str = "paragraph",
+        chunk_size: int = 400,
+        chunk_overlap: int = 0,
+        split_by: str = "sentence",
     ):
         """
         Initialize the text chunker.
