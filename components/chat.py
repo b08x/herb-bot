@@ -83,8 +83,46 @@ def generate_response(user_input: str) -> str:
     Returns:
         Generated response
     """
+    # Check if contextual retrieval is enabled
+    use_contextual = st.session_state.get("use_contextual_retrieval", True)
+
+    # Get retrieval method if set
+    retrieval_method_map = {
+        "Hybrid (TF-IDF + BM25)": "hybrid",
+        "TF-IDF Only": "tfidf",
+        "BM25 Only": "bm25",
+    }
+
+    # Default to hybrid if not set
+    selected_method = st.session_state.get("retrieval_method", "Hybrid (TF-IDF + BM25)")
+    method = retrieval_method_map.get(selected_method, "hybrid")
+
+    # Get max chunks setting
+    max_chunks = st.session_state.get("max_chunks", 5)
+
     # Prepare context for the model
-    messages = st.session_state.context_manager.prepare_context_for_model()
+    if use_contextual:
+        # Use contextual retrieval with the user's query
+        messages = st.session_state.context_manager.prepare_context_for_model(
+            include_docs=True,
+            max_doc_length=8000,
+            max_messages=None,
+            query=user_input,  # Use the user's query for contextual retrieval
+            method=method,
+            max_chunks=max_chunks,
+        )
+
+        # Log the retrieval method being used (for debugging)
+        print(
+            f"Using contextual retrieval with method: {method}, max chunks: {max_chunks}"
+        )
+    else:
+        # Use standard context preparation without contextual retrieval
+        messages = st.session_state.context_manager.prepare_context_for_model(
+            include_docs=True, max_doc_length=8000, max_messages=None
+        )
+
+        print("Using standard retrieval (no contextual chunking)")
 
     # Generate response
     response = gemini_service.generate_response(messages)
@@ -265,37 +303,75 @@ def chat_settings():
     """Render the chat settings component."""
     st.subheader("Chat Settings")
 
-    # Model selection
-    available_models = [
-        "models/gemini-2.0-pro-exp-02-0",
-        "models/gemini-2.0-flash",
-        "models/gemini-2.0-flash-thinking-exp-01-21",
-        "models/learnlm-1.5-pro-experimental",
-        "models/gemini-1.5-pro",
-        "models/gemini-1.5-flash",
-        "models/gemini-1.0-pro",
-    ]
-    selected_model = st.selectbox("Model", options=available_models, index=0)
+    # Create columns for settings
+    col1, col2 = st.columns(2)
 
-    # Temperature slider
-    temperature = st.slider(
-        "Temperature",
-        min_value=0.0,
-        max_value=1.0,
-        value=0.3,
-        step=0.1,
-        help="Higher values make output more random, lower values more deterministic",
-    )
+    with col1:
+        # Model selection
+        available_models = [
+            "models/gemini-2.0-pro-exp-02-0",
+            "models/gemini-2.0-flash",
+            "models/gemini-2.0-flash-thinking-exp-01-21",
+            "models/learnlm-1.5-pro-experimental",
+            "models/gemini-1.5-pro",
+            "models/gemini-1.5-flash",
+            "models/gemini-1.0-pro",
+        ]
+        selected_model = st.selectbox("Model", options=available_models, index=0)
 
-    # Max tokens slider
-    max_tokens = st.slider(
-        "Max Output Tokens",
-        min_value=256,
-        max_value=4096,
-        value=2048,
-        step=256,
-        help="Maximum number of tokens in the response",
-    )
+        # Temperature slider
+        temperature = st.slider(
+            "Temperature",
+            min_value=0.0,
+            max_value=1.0,
+            value=0.3,
+            step=0.1,
+            help="Higher values make output more random, lower values more deterministic",
+        )
+
+        # Max tokens slider
+        max_tokens = st.slider(
+            "Max Output Tokens",
+            min_value=256,
+            max_value=4096,
+            value=2048,
+            step=256,
+            help="Maximum number of tokens in the response",
+        )
+
+    with col2:
+        # Document context settings
+        st.subheader("Document Context Settings")
+
+        # Initialize contextual retrieval setting in session state if not present
+        if "use_contextual_retrieval" not in st.session_state:
+            st.session_state.use_contextual_retrieval = True
+
+        # Toggle for contextual retrieval
+        use_contextual = st.toggle(
+            "Use Contextual Retrieval",
+            value=st.session_state.use_contextual_retrieval,
+            help="When enabled, the system will retrieve document chunks most relevant to your query",
+        )
+
+        # Retrieval method selection
+        retrieval_methods = ["Hybrid (TF-IDF + BM25)", "TF-IDF Only", "BM25 Only"]
+        retrieval_method = st.selectbox(
+            "Retrieval Method",
+            options=retrieval_methods,
+            index=0,
+            help="Method used to find relevant document chunks",
+        )
+
+        # Number of chunks to retrieve
+        max_chunks = st.slider(
+            "Max Document Chunks",
+            min_value=1,
+            max_value=10,
+            value=5,
+            step=1,
+            help="Maximum number of document chunks to include in context",
+        )
 
     # Update settings button
     if st.button("Apply Settings"):
@@ -305,6 +381,20 @@ def chat_settings():
                 gemini_service.model_name = selected_model
                 # Create a new model instance with the selected model name
                 gemini_service.model = genai.GenerativeModel(selected_model)
+
+                # Update contextual retrieval settings
+                st.session_state.use_contextual_retrieval = use_contextual
+                st.session_state.retrieval_method = retrieval_method
+                st.session_state.max_chunks = max_chunks
+
+                if "context_manager" in st.session_state:
+                    st.session_state.context_manager.use_contextual_retrieval = (
+                        use_contextual
+                    )
+                    st.session_state.context_manager.document_context.use_contextual_chunks = (
+                        use_contextual
+                    )
+
                 st.success("Chat settings updated successfully!")
             except Exception as e:
                 st.error(f"Error updating model: {e}")

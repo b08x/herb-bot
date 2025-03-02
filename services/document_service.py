@@ -8,6 +8,8 @@ import uuid
 from datetime import datetime
 from typing import Any, Dict, List, Optional, Tuple
 
+from utils.text_chunking import (BM25Retriever, HybridRetriever, TextChunker,
+                                 TFIDFRetriever, get_contextual_chunks)
 from utils.text_extraction import extract_text_from_file, get_file_metadata
 
 
@@ -23,6 +25,19 @@ class DocumentService:
         """
         self.upload_dir = upload_dir
         self.documents = {}
+
+        # Initialize text chunker
+        self.text_chunker = TextChunker(
+            chunk_size=1000, chunk_overlap=200, split_by="paragraph"
+        )
+
+        # Initialize retrievers
+        self.tfidf_retriever = TFIDFRetriever()
+        self.bm25_retriever = BM25Retriever()
+        self.hybrid_retriever = HybridRetriever()
+
+        # Flag to track if retrievers are initialized with documents
+        self.retrievers_initialized = False
 
         # Create upload directory if it doesn't exist
         os.makedirs(self.upload_dir, exist_ok=True)
@@ -87,10 +102,16 @@ class DocumentService:
             "processed_at": datetime.now().isoformat(),
         }
 
-        # Store document
-        self.documents[doc_id] = document
+        # Chunk the document text
+        chunked_document = self.text_chunker.chunk_document(document)
 
-        return document
+        # Store document with chunks
+        self.documents[doc_id] = chunked_document
+
+        # Reset retrievers initialization flag
+        self.retrievers_initialized = False
+
+        return chunked_document
 
     def get_document(self, doc_id: str) -> Optional[Dict[str, Any]]:
         """
@@ -192,9 +213,31 @@ class DocumentService:
         """
         return [self.get_document_summary(doc_id) for doc_id in self.documents]
 
+    def _initialize_retrievers(self):
+        """Initialize retrievers with all documents if not already initialized."""
+        if not self.retrievers_initialized:
+            # Clear existing documents in retrievers
+            self.tfidf_retriever = TFIDFRetriever()
+            self.bm25_retriever = BM25Retriever()
+            self.hybrid_retriever = HybridRetriever()
+
+            # Add all documents to retrievers
+            for doc_id, document in self.documents.items():
+                # Skip documents without chunks
+                if "chunks" not in document:
+                    continue
+
+                self.tfidf_retriever.add_document(document)
+                self.bm25_retriever.add_document(document)
+                self.hybrid_retriever.add_document(document)
+
+            self.retrievers_initialized = True
+
     def search_documents(self, query: str) -> List[Dict[str, Any]]:
         """
         Search for documents containing the query.
+
+        This method uses a hybrid of TF-IDF and BM25 for contextual retrieval.
 
         Args:
             query: Search query
@@ -202,8 +245,16 @@ class DocumentService:
         Returns:
             List of matching document dictionaries
         """
-        results = []
+        # If no documents, return empty list
+        if not self.documents:
+            return []
 
+        # Use contextual search if documents have chunks
+        if any("chunks" in doc for doc in self.documents.values()):
+            return self.contextual_search(query)
+
+        # Fallback to basic search if no chunks
+        results = []
         for doc_id, document in self.documents.items():
             if query.lower() in document["text"].lower():
                 # Create a result with context
@@ -227,10 +278,86 @@ class DocumentService:
                         "file_name": document["metadata"].get("file_name", "Unknown"),
                         "context": context,
                         "match_position": query_pos,
+                        "score": 1.0,  # Default score for basic search
                     }
                 )
 
         return results
+
+    def contextual_search(
+        self, query: str, top_k: int = 5, method: str = "hybrid"
+    ) -> List[Dict[str, Any]]:
+        """
+        Search for document chunks relevant to the query using contextual retrieval.
+
+        Args:
+            query: Search query
+            top_k: Number of top results to return
+            method: Retrieval method ('tfidf', 'bm25', or 'hybrid')
+
+        Returns:
+            List of relevant chunks with scores and document information
+        """
+        # Initialize retrievers if needed
+        self._initialize_retrievers()
+
+        # Get document list
+        documents = list(self.documents.values())
+
+        # If no documents, return empty list
+        if not documents:
+            return []
+
+        # Get retriever based on method
+        if method == "tfidf":
+            retriever = self.tfidf_retriever
+        elif method == "bm25":
+            retriever = self.bm25_retriever
+        else:  # hybrid
+            retriever = self.hybrid_retriever
+
+        # Search for relevant chunks
+        chunk_results = retriever.search(query, top_k=top_k)
+
+        # Format results
+        results = []
+        for chunk in chunk_results:
+            doc_id = chunk["doc_id"]
+            document = self.documents.get(doc_id)
+
+            if document:
+                result = {
+                    "id": doc_id,
+                    "chunk_index": chunk["index"],
+                    "file_name": document["metadata"].get("file_name", "Unknown"),
+                    "context": chunk["text"],
+                    "score": chunk.get("score", 0.0),
+                }
+
+                # Add combined score if available
+                if "combined_score" in chunk:
+                    result["combined_score"] = chunk["combined_score"]
+                    result["tfidf_score"] = chunk.get("tfidf_score", 0.0)
+                    result["bm25_score"] = chunk.get("bm25_score", 0.0)
+
+                results.append(result)
+
+        return results
+
+    def semantic_search(self, query: str, top_k: int = 5) -> List[Dict[str, Any]]:
+        """
+        Perform semantic search on documents using contextual chunks.
+
+        This is a wrapper around contextual_search that uses the hybrid method.
+
+        Args:
+            query: Search query
+            top_k: Number of top results to return
+
+        Returns:
+            List of relevant chunks with scores and document information
+        """
+        return self.contextual_search(query, top_k=top_k, method="hybrid")
 
     def export_document_data(self, doc_id: str, output_path: str) -> bool:
         """

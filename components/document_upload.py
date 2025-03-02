@@ -171,63 +171,134 @@ def document_viewer():
 
 
 def document_search():
-    """Search within uploaded documents."""
+    """Search within uploaded documents using contextual retrieval."""
     st.subheader("Document Search")
 
     if not st.session_state.uploaded_documents:
         st.info("No documents uploaded yet.")
         return
 
-    # Search input
-    search_query = st.text_input("Search in documents")
+    # Create columns for search options
+    col1, col2 = st.columns([3, 1])
+
+    with col1:
+        # Search input
+        search_query = st.text_input("Search in documents")
+
+    with col2:
+        # Search method selection
+        search_method = st.selectbox(
+            "Method",
+            options=["Hybrid", "TF-IDF", "BM25", "Basic"],
+            index=0,
+            help="Hybrid combines TF-IDF and BM25 for better results",
+        )
 
     if search_query and len(search_query) >= 3:
-        # Search in documents
-        results = []
+        with st.spinner("Searching documents..."):
+            # Map the selected method to the API parameter
+            method_map = {
+                "Hybrid": "hybrid",
+                "TF-IDF": "tfidf",
+                "BM25": "bm25",
+                "Basic": "basic",
+            }
+            method = method_map[search_method]
 
-        for doc_id, document in st.session_state.uploaded_documents.items():
-            if search_query.lower() in document["text"].lower():
-                # Get context around the match
-                text = document["text"]
-                query_pos = text.lower().find(search_query.lower())
+            # Use basic search or contextual search based on selection
+            if method == "basic":
+                # Basic search (original implementation)
+                results = []
 
-                # Get context (100 characters before and after)
-                start = max(0, query_pos - 100)
-                end = min(len(text), query_pos + len(search_query) + 100)
-                context = text[start:end]
+                for doc_id, document in st.session_state.uploaded_documents.items():
+                    if search_query.lower() in document["text"].lower():
+                        # Get context around the match
+                        text = document["text"]
+                        query_pos = text.lower().find(search_query.lower())
 
-                # Add ellipsis if context is truncated
-                if start > 0:
-                    context = "..." + context
-                if end < len(text):
-                    context = context + "..."
+                        # Get context (100 characters before and after)
+                        start = max(0, query_pos - 100)
+                        end = min(len(text), query_pos + len(search_query) + 100)
+                        context = text[start:end]
 
-                # Highlight the match
-                highlighted_context = context.replace(
-                    search_query, f"**{search_query}**"
+                        # Add ellipsis if context is truncated
+                        if start > 0:
+                            context = "..." + context
+                        if end < len(text):
+                            context = context + "..."
+
+                        # Highlight the match
+                        highlighted_context = context.replace(
+                            search_query, f"**{search_query}**"
+                        )
+
+                        results.append(
+                            {
+                                "id": doc_id,
+                                "name": document["metadata"].get(
+                                    "file_name", "Unknown"
+                                ),
+                                "context": highlighted_context,
+                                "score": 1.0,  # Default score for basic search
+                            }
+                        )
+            else:
+                # Use contextual search with the document service
+                results = document_service.contextual_search(
+                    query=search_query, top_k=5, method=method
                 )
 
-                results.append(
-                    {
-                        "id": doc_id,
-                        "name": document["metadata"].get("file_name", "Unknown"),
-                        "context": highlighted_context,
-                    }
-                )
+                # Format results for display
+                for result in results:
+                    # Highlight the query terms if possible
+                    context = result["context"]
+                    # Simple highlighting - this could be improved with regex
+                    for term in search_query.lower().split():
+                        if len(term) > 3:  # Only highlight terms with more than 3 chars
+                            context = context.replace(term, f"**{term}**")
+
+                    result["context"] = context
 
         # Display results
         if results:
-            st.write(f"Found {len(results)} matches:")
+            st.write(f"Found {len(results)} relevant matches:")
 
-            for result in results:
+            for i, result in enumerate(results):
                 with st.container(border=True):
-                    st.write(f"**{result['name']}**")
+                    # Display document name and score
+                    score_display = f" (Score: {result.get('score', 0):.2f})"
+                    st.write(f"**{result.get('name', 'Unknown')}**{score_display}")
+
+                    # Display context
                     st.markdown(result["context"])
 
-                    # View document button
-                    if st.button("View Document", key=f"view_{result['id']}"):
-                        st.session_state.selected_document_id = result["id"]
-                        st.rerun()
+                    # Create columns for buttons
+                    btn_col1, btn_col2 = st.columns(2)
+
+                    with btn_col1:
+                        # View document button
+                        if st.button("View Document", key=f"view_{i}_{result['id']}"):
+                            st.session_state.selected_document_id = result["id"]
+                            st.rerun()
+
+                    with btn_col2:
+                        # Add to chat context button
+                        if st.button("Add to Chat", key=f"add_{i}_{result['id']}"):
+                            if "context_manager" in st.session_state:
+                                # Get the full document
+                                doc = st.session_state.uploaded_documents.get(
+                                    result["id"]
+                                )
+                                if doc:
+                                    # Add to context manager
+                                    st.session_state.context_manager.document_context.add_document(
+                                        doc["id"], doc["text"], doc["metadata"]
+                                    )
+                                    st.success(
+                                        f"Added to chat context: {doc['metadata'].get('file_name', 'Document')}"
+                                    )
+                            else:
+                                st.error("Chat context not available.")
         else:
             st.info(f"No matches found for '{search_query}'")
 
