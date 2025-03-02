@@ -4,6 +4,7 @@ Chat interface component for the Streamlit application.
 import json
 from typing import Any, Dict, List, Optional
 
+import google.generativeai as genai
 import streamlit as st
 from services.gemini_service import gemini_service
 from utils.context_management import ContextManager
