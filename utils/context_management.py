@@ -2,7 +2,9 @@
 Utility functions for managing conversation context and document integration.
 """
 import json
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Union
+
+from utils.text_chunking import TextChunker, get_contextual_chunks
 
 
 class Message:
@@ -104,6 +106,10 @@ class DocumentContext:
     def __init__(self):
         """Initialize document context."""
         self.documents: Dict[str, Dict[str, Any]] = {}
+        self.text_chunker = TextChunker(
+            chunk_size=1000, chunk_overlap=200, split_by="paragraph"
+        )
+        self.use_contextual_chunks = True
 
     def add_document(self, doc_id: str, content: str, metadata: Dict[str, Any]) -> None:
         """
@@ -114,7 +120,20 @@ class DocumentContext:
             content: Text content of the document
             metadata: Document metadata
         """
-        self.documents[doc_id] = {"content": content, "metadata": metadata}
+        document = {"content": content, "metadata": metadata}
+
+        # Create chunks if enabled
+        if self.use_contextual_chunks:
+            # Create a document in the format expected by the chunker
+            doc_for_chunking = {"id": doc_id, "text": content, "metadata": metadata}
+
+            # Chunk the document
+            chunked_doc = self.text_chunker.chunk_document(doc_for_chunking)
+
+            # Add chunks to the document
+            document["chunks"] = chunked_doc.get("chunks", [])
+
+        self.documents[doc_id] = document
 
     def get_document(self, doc_id: str) -> Optional[Dict[str, Any]]:
         """
@@ -156,16 +175,85 @@ class DocumentContext:
         """Clear all documents from the context."""
         self.documents = {}
 
-    def get_combined_content(self, max_length: Optional[int] = None) -> str:
+    def get_contextual_chunks(
+        self, query: str, top_k: int = 5, method: str = "hybrid"
+    ) -> List[Dict[str, Any]]:
+        """
+        Get contextual chunks from documents based on a query.
+
+        Args:
+            query: Query to find relevant chunks
+            top_k: Number of top chunks to return
+            method: Retrieval method ('hybrid', 'tfidf', or 'bm25')
+
+        Returns:
+            List of relevant chunks with scores
+        """
+        # Convert documents to the format expected by get_contextual_chunks
+        docs_for_retrieval = []
+        for doc_id, doc_data in self.documents.items():
+            # Skip documents without chunks
+            if "chunks" not in doc_data:
+                continue
+
+            # Create a document with the expected format
+            doc = {
+                "id": doc_id,
+                "text": doc_data["content"],
+                "metadata": doc_data["metadata"],
+                "chunks": doc_data["chunks"],
+            }
+
+            docs_for_retrieval.append(doc)
+
+        # Get contextual chunks
+        return get_contextual_chunks(
+            query, docs_for_retrieval, top_k=top_k, method=method
+        )
+
+    def get_combined_content(
+        self,
+        max_length: Optional[int] = None,
+        query: Optional[str] = None,
+        method: str = "hybrid",
+        max_chunks: int = 5,
+    ) -> str:
         """
         Get combined content of all documents.
 
+        If a query is provided and contextual chunks are enabled, returns relevant chunks.
+        Otherwise, returns all document content.
+
         Args:
             max_length: Optional maximum length of the combined content
+            query: Optional query to find relevant chunks
+            method: Retrieval method ('hybrid', 'tfidf', or 'bm25')
+            max_chunks: Maximum number of chunks to retrieve
 
         Returns:
             Combined document content
         """
+        # If query is provided and contextual chunks are enabled, use contextual retrieval
+        if query and self.use_contextual_chunks:
+            chunks = self.get_contextual_chunks(query, top_k=max_chunks, method=method)
+
+            if chunks:
+                combined = ""
+
+                for chunk in chunks:
+                    doc_id = chunk.get("doc_id", "unknown")
+                    doc_data = self.documents.get(doc_id, {})
+                    doc_name = doc_data.get("metadata", {}).get("file_name", doc_id)
+
+                    combined += f"\n\n--- Document: {doc_name} (Relevance: {chunk.get('score', 0):.2f}) ---\n\n"
+                    combined += chunk.get("text", "")
+
+                if max_length and len(combined) > max_length:
+                    return combined[:max_length] + "..."
+
+                return combined
+
+        # Default behavior: combine all documents
         combined = ""
 
         for doc_id, doc_data in self.documents.items():
@@ -193,12 +281,16 @@ class ContextManager:
         """
         self.conversation = Conversation(system_prompt)
         self.document_context = DocumentContext()
+        self.use_contextual_retrieval = True
 
     def prepare_context_for_model(
         self,
         include_docs: bool = True,
         max_doc_length: Optional[int] = 8000,
         max_messages: Optional[int] = None,
+        query: Optional[str] = None,
+        method: str = "hybrid",
+        max_chunks: int = 5,
     ) -> List[Dict[str, str]]:
         """
         Prepare context for sending to the model.
@@ -207,6 +299,9 @@ class ContextManager:
             include_docs: Whether to include document content
             max_doc_length: Maximum length of document content to include
             max_messages: Maximum number of messages to include
+            query: Optional query for contextual document retrieval
+            method: Retrieval method ('hybrid', 'tfidf', or 'bm25')
+            max_chunks: Maximum number of chunks to retrieve
 
         Returns:
             List of message dictionaries ready for the model
@@ -221,9 +316,18 @@ class ContextManager:
                 messages = messages[-max_messages:]
 
         if include_docs and self.document_context.documents:
-            doc_content = self.document_context.get_combined_content(
-                max_length=max_doc_length
-            )
+            # Use the query for contextual retrieval if available and enabled
+            if query and self.use_contextual_retrieval:
+                doc_content = self.document_context.get_combined_content(
+                    max_length=max_doc_length,
+                    query=query,
+                    method=method,
+                    max_chunks=max_chunks,
+                )
+            else:
+                doc_content = self.document_context.get_combined_content(
+                    max_length=max_doc_length
+                )
 
             # Find the right position to insert document context
             # If there's a system message, insert after it
@@ -241,3 +345,16 @@ class ContextManager:
                 )
 
         return messages
+
+    def get_relevant_context(self, query: str, top_k: int = 5) -> List[Dict[str, Any]]:
+        """
+        Get contextually relevant chunks from documents based on a query.
+
+        Args:
+            query: Query to find relevant chunks
+            top_k: Number of top chunks to return
+
+        Returns:
+            List of relevant chunks with scores
+        """
+        return self.document_context.get_contextual_chunks(query, top_k=top_k)

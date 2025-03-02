@@ -161,47 +161,8 @@ def herb_search():
 
 def herb_interaction_search():
     """Render the herb interaction search component."""
-    st.subheader("Herb Interaction Search")
-
-    # Create two columns for inputs
-    col1, col2 = st.columns(2)
-
-    with col1:
-        herb_name = st.text_input("Herb Name", key="interaction_herb")
-
-    with col2:
-        substance = st.text_input("Medication/Substance")
-
-    # Search button
-    if st.button("Search Interactions", use_container_width=True):
-        if herb_name and substance:
-            with st.spinner(
-                f"Searching for interactions between {herb_name} and {substance}..."
-            ):
-                # Perform interaction search
-                results = search_service.search_herb_interactions(herb_name, substance)
-
-                # Display results
-                if results:
-                    for i, result in enumerate(results):
-                        with st.container(border=True):
-                            st.markdown(f"### [{result['title']}]({result['link']})")
-                            st.caption(f"Source: {result['source']}")
-                            st.markdown(result["snippet"])
-
-                            # Add warning about medical advice
-                            if i == 0:
-                                st.warning(
-                                    "This information is for research purposes only. "
-                                    "Always consult a healthcare professional before making "
-                                    "decisions about herb-drug interactions."
-                                )
-                else:
-                    st.info(
-                        f"No interaction results found for {herb_name} and {substance}"
-                    )
-        else:
-            st.warning("Please enter both an herb name and a medication/substance.")
+    # This function is no longer used - we've moved the implementation directly into render_search_tab
+    pass
 
 
 def fact_check_interface():
@@ -244,16 +205,49 @@ def render_search_tab():
 
     st.divider()
 
-    # Create two columns for specialized searches
-    col1, col2 = st.columns(2)
+    # Herb search
+    herb_search()
 
-    with col1:
-        # Herb search
-        herb_search()
+    st.divider()
 
-    with col2:
-        # Herb interaction search
-        herb_interaction_search()
+    # Herb interaction search - modified to not use columns
+    st.subheader("Herb Interaction Search")
+
+    # Create a container for the inputs
+    with st.container():
+        herb_name = st.text_input("Herb Name", key="interaction_herb")
+        substance = st.text_input("Medication/Substance")
+
+    # Search button
+    if st.button("Search Interactions", use_container_width=True):
+        if herb_name and substance:
+            with st.spinner(
+                f"Searching for interactions between {herb_name} and {substance}..."
+            ):
+                # Perform interaction search
+                results = search_service.search_herb_interactions(herb_name, substance)
+
+                # Display results
+                if results:
+                    for i, result in enumerate(results):
+                        with st.container(border=True):
+                            st.markdown(f"### [{result['title']}]({result['link']})")
+                            st.caption(f"Source: {result['source']}")
+                            st.markdown(result["snippet"])
+
+                            # Add warning about medical advice
+                            if i == 0:
+                                st.warning(
+                                    "This information is for research purposes only. "
+                                    "Always consult a healthcare professional before making "
+                                    "decisions about herb-drug interactions."
+                                )
+                else:
+                    st.info(
+                        f"No interaction results found for {herb_name} and {substance}"
+                    )
+        else:
+            st.warning("Please enter both an herb name and a medication/substance.")
 
     st.divider()
 
