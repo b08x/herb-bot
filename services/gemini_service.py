@@ -32,6 +32,9 @@ except ImportError as e:
 class GeminiService:
     """Service for interacting with Google's Gemini API."""
 
+    # Class variable to cache whether system_instruction is supported
+    _system_instruction_supported = None
+
     def __init__(self, model_name: str = "models/gemini-2.0-flash"):
         """
         Initialize the Gemini service.
@@ -72,6 +75,32 @@ class GeminiService:
             return json.dumps(self.system_prompt)
         return None
 
+    def _check_system_instruction_support(self) -> bool:
+        """
+        Check if the system_instruction parameter is supported by the current SDK version.
+
+        Returns:
+            bool: True if system_instruction is supported, False otherwise
+        """
+        # Return cached result if available
+        if GeminiService._system_instruction_supported is not None:
+            return GeminiService._system_instruction_supported
+
+        # Check if system_instruction is supported
+        try:
+            # Use inspect to check if the method signature includes system_instruction
+            import inspect
+
+            signature = inspect.signature(self.model.start_chat)
+            GeminiService._system_instruction_supported = (
+                "system_instruction" in signature.parameters
+            )
+        except Exception:
+            # If any error occurs, assume it's not supported
+            GeminiService._system_instruction_supported = False
+
+        return GeminiService._system_instruction_supported
+
     def generate_response(
         self,
         messages: List[Dict[str, str]],
@@ -111,17 +140,14 @@ class GeminiService:
                         {"role": "model", "parts": [{"text": message["content"]}]}
                     )
                 elif message["role"] == "system" and message == messages[0]:
-                    # System message is handled differently
-                    # For newer versions of the API, system_instruction might not be supported
-                    try:
-                        # Try with system_instruction parameter
+                    # System message is handled differently based on SDK support
+                    if self._check_system_instruction_support():
+                        # If system_instruction is supported, use it
                         chat = self.model.start_chat(
                             history=[], system_instruction=message["content"]
                         )
-                    except TypeError as e:
-                        # If system_instruction is not supported, add as a regular message
-                        print(f"System instruction not supported: {e}")
-                        # Create a new chat
+                    else:
+                        # If not supported, use the workaround
                         chat = self.model.start_chat(history=[])
                         # Add system message as a user message (workaround)
                         chat.send_message(f"System instructions: {message['content']}")
