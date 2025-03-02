@@ -340,6 +340,26 @@ def create_document_herb_heatmap(
     # Convert to DataFrame
     df = pd.DataFrame(data)
 
+    # Check if dataframe is empty
+    if df.empty:
+        # Create an empty figure with a message
+        fig = go.Figure()
+        fig.add_annotation(
+            text="No herb mentions found in the selected documents",
+            xref="paper",
+            yref="paper",
+            x=0.5,
+            y=0.5,
+            showarrow=False,
+            font=dict(size=16),
+        )
+        fig.update_layout(
+            title="Herb Mentions Across Documents",
+            height=500,
+            margin=dict(l=10, r=10, t=50, b=10),
+        )
+        return fig
+
     # Pivot for heatmap format
     pivot_df = df.pivot(index="Document", columns="Herb", values="Mentions").fillna(0)
 

@@ -192,10 +192,16 @@ def chat_settings():
     # Update settings button
     if st.button("Apply Settings"):
         # Update Gemini service
-        gemini_service.model_name = selected_model
-        gemini_service.model = gemini_service.model._replace(model_name=selected_model)
-
-        st.success("Chat settings updated successfully!")
+        if gemini_service.api_available and gemini_service.model is not None:
+            try:
+                gemini_service.model_name = selected_model
+                # Create a new model instance with the selected model name
+                gemini_service.model = genai.GenerativeModel(selected_model)
+                st.success("Chat settings updated successfully!")
+            except Exception as e:
+                st.error(f"Error updating model: {e}")
+        else:
+            st.warning("Gemini API is not available. Settings cannot be applied.")
 
     # Clear chat history button
     if st.button("Clear Chat History"):

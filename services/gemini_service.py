@@ -111,10 +111,19 @@ class GeminiService:
                     )
                 elif message["role"] == "system" and message == messages[0]:
                     # System message is handled differently
-                    # We'll use it as the system instruction
-                    chat = self.model.start_chat(
-                        history=[], system_instruction=message["content"]
-                    )
+                    # For newer versions of the API, system_instruction might not be supported
+                    try:
+                        # Try with system_instruction parameter
+                        chat = self.model.start_chat(
+                            history=[], system_instruction=message["content"]
+                        )
+                    except TypeError as e:
+                        # If system_instruction is not supported, add as a regular message
+                        print(f"System instruction not supported: {e}")
+                        # Create a new chat
+                        chat = self.model.start_chat(history=[])
+                        # Add system message as a user message (workaround)
+                        chat.send_message(f"System instructions: {message['content']}")
 
             # Generate response
             response = chat.send_message(
