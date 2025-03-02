@@ -28,11 +28,11 @@ def upload_document():
     )
 
     if uploaded_file is not None:
-        # Display file info
-        st.write(f"File: {uploaded_file.name} ({uploaded_file.size} bytes)")
+        # Display file info in a more compact way
+        st.caption(f"{uploaded_file.name} ({uploaded_file.size} bytes)")
 
-        # Upload button
-        if st.button("Process Document"):
+        # Upload button - make it more compact
+        if st.button("Process Document", use_container_width=True):
             with st.spinner("Processing document..."):
                 try:
                     # Save the uploaded file
@@ -50,13 +50,13 @@ def upload_document():
                             document["id"], document["text"], document["metadata"]
                         )
 
-                    st.success(f"Document processed successfully: {uploaded_file.name}")
+                    st.success(f"Processed: {uploaded_file.name}")
 
                     # Set as selected document
                     st.session_state.selected_document_id = document["id"]
 
                 except Exception as e:
-                    st.error(f"Error processing document: {e}")
+                    st.error(f"Error: {e}")
 
 
 def document_list():
@@ -84,24 +84,28 @@ def document_list():
             }
         )
 
-    # Create columns for each document
-    cols = st.columns(min(3, len(documents)))
-
+    # Display documents in a more compact list
     for i, doc in enumerate(documents):
-        with cols[i % len(cols)]:
-            # Create a card-like display
-            with st.container(border=True):
-                st.write(f"**{doc['name']}**")
-                st.write(f"Type: {doc['type']}")
-                st.write(f"Size: {doc['size']}")
+        with st.container(border=True):
+            # More compact display
+            st.caption(f"{doc['name']} ({doc['type']}, {doc['size']})")
 
+            # Create two columns for buttons
+            col1, col2 = st.columns(2)
+
+            with col1:
                 # Select button
-                if st.button("Select", key=f"select_{doc['id']}"):
+                if st.button(
+                    "Select", key=f"select_{doc['id']}", use_container_width=True
+                ):
                     st.session_state.selected_document_id = doc["id"]
                     st.rerun()
 
+            with col2:
                 # Delete button
-                if st.button("Delete", key=f"delete_{doc['id']}"):
+                if st.button(
+                    "Delete", key=f"delete_{doc['id']}", use_container_width=True
+                ):
                     # Delete from document service
                     document_service.delete_document(doc["id"])
 
@@ -118,7 +122,7 @@ def document_list():
                     if st.session_state.selected_document_id == doc["id"]:
                         st.session_state.selected_document_id = None
 
-                    st.success(f"Document deleted: {doc['name']}")
+                    st.success(f"Deleted: {doc['name']}")
                     st.rerun()
 
 
@@ -127,7 +131,7 @@ def document_viewer():
     st.subheader("Document Viewer")
 
     if st.session_state.selected_document_id is None:
-        st.info("Select a document to view its contents.")
+        st.info("Select a document to view.")
         return
 
     # Get the selected document
@@ -135,37 +139,41 @@ def document_viewer():
     document = st.session_state.uploaded_documents.get(doc_id)
 
     if document is None:
-        st.error("Selected document not found.")
+        st.error("Document not found.")
         return
 
-    # Display document info
+    # Display document info in a more compact way
     file_name = document["metadata"].get("file_name", "Unknown")
     file_type = document["metadata"].get("file_extension", "Unknown")
     file_size = document["metadata"].get("file_size_kb", 0)
 
-    st.write(f"**{file_name}**")
-    st.write(f"Type: {file_type} | Size: {file_size} KB")
+    st.caption(f"**{file_name}** ({file_type}, {file_size} KB)")
 
-    # Display document metadata
-    with st.expander("Document Metadata"):
+    # Display document metadata in a collapsible section
+    with st.expander("Metadata"):
         st.json(document["metadata"])
 
-    # Display document content
-    st.markdown("### Document Content")
+    # Display document content in a more compact way
+    with st.expander("Content", expanded=True):
+        # Create a smaller text area with the document content
+        text_content = document["text"]
+        st.text_area(
+            "",
+            value=text_content,
+            height=200,
+            disabled=True,
+            label_visibility="collapsed",
+        )
 
-    # Create a text area with the document content
-    text_content = document["text"]
-    st.text_area("Document Text", value=text_content, height=400, disabled=True)
-
-    # Add to chat context button
-    if st.button("Use in Chat"):
+    # Add to chat context button - make it more prominent
+    if st.button("Use in Chat", use_container_width=True, type="primary"):
         # Add to context manager if available
         if "context_manager" in st.session_state:
             st.session_state.context_manager.document_context.add_document(
                 document["id"], document["text"], document["metadata"]
             )
 
-            st.success(f"Document added to chat context: {file_name}")
+            st.success(f"Added to chat: {file_name}")
         else:
             st.error("Chat context not available.")
 
@@ -178,24 +186,19 @@ def document_search():
         st.info("No documents uploaded yet.")
         return
 
-    # Create columns for search options
-    col1, col2 = st.columns([3, 1])
+    # Search input
+    search_query = st.text_input("Search in documents")
 
-    with col1:
-        # Search input
-        search_query = st.text_input("Search in documents")
-
-    with col2:
-        # Search method selection
-        search_method = st.selectbox(
-            "Method",
-            options=["Hybrid", "TF-IDF", "BM25", "Basic"],
-            index=0,
-            help="Hybrid combines TF-IDF and BM25 for better results",
-        )
+    # Search method as a radio button to save space
+    search_method = st.radio(
+        "Method",
+        options=["Hybrid", "TF-IDF", "BM25", "Basic"],
+        horizontal=True,
+        label_visibility="collapsed",
+    )
 
     if search_query and len(search_query) >= 3:
-        with st.spinner("Searching documents..."):
+        with st.spinner("Searching..."):
             # Map the selected method to the API parameter
             method_map = {
                 "Hybrid": "hybrid",
@@ -245,7 +248,7 @@ def document_search():
             else:
                 # Use contextual search with the document service
                 results = document_service.contextual_search(
-                    query=search_query, top_k=5, method=method
+                    query=search_query, top_k=3, method=method
                 )
 
                 # Format results for display
@@ -261,15 +264,17 @@ def document_search():
 
         # Display results
         if results:
-            st.write(f"Found {len(results)} relevant matches:")
+            st.caption(f"Found {len(results)} matches")
 
             for i, result in enumerate(results):
                 with st.container(border=True):
-                    # Display document name and score
-                    score_display = f" (Score: {result.get('score', 0):.2f})"
-                    st.write(f"**{result.get('name', 'Unknown')}**{score_display}")
+                    # Display document name and score in a more compact way
+                    score = result.get("score", 0)
+                    st.caption(
+                        f"**{result.get('name', 'Unknown')}** (Score: {score:.2f})"
+                    )
 
-                    # Display context
+                    # Display context in a more compact way
                     st.markdown(result["context"])
 
                     # Create columns for buttons
@@ -277,13 +282,21 @@ def document_search():
 
                     with btn_col1:
                         # View document button
-                        if st.button("View Document", key=f"view_{i}_{result['id']}"):
+                        if st.button(
+                            "View",
+                            key=f"view_{i}_{result['id']}",
+                            use_container_width=True,
+                        ):
                             st.session_state.selected_document_id = result["id"]
                             st.rerun()
 
                     with btn_col2:
                         # Add to chat context button
-                        if st.button("Add to Chat", key=f"add_{i}_{result['id']}"):
+                        if st.button(
+                            "Add",
+                            key=f"add_{i}_{result['id']}",
+                            use_container_width=True,
+                        ):
                             if "context_manager" in st.session_state:
                                 # Get the full document
                                 doc = st.session_state.uploaded_documents.get(
@@ -295,38 +308,33 @@ def document_search():
                                         doc["id"], doc["text"], doc["metadata"]
                                     )
                                     st.success(
-                                        f"Added to chat context: {doc['metadata'].get('file_name', 'Document')}"
+                                        f"Added: {doc['metadata'].get('file_name', 'Document')}"
                                     )
                             else:
                                 st.error("Chat context not available.")
         else:
-            st.info(f"No matches found for '{search_query}'")
+            st.info(f"No matches for '{search_query}'")
 
 
 def render_document_upload_tab():
     """Render the document upload tab in the Streamlit application."""
-    st.title("Document Management")
-
     # Initialize document state
     initialize_document_state()
 
-    # Create two columns
-    col1, col2 = st.columns([1, 2])
+    # Upload section
+    upload_document()
 
-    with col1:
-        # Upload section
-        upload_document()
+    st.divider()
 
-        st.divider()
+    # Document list
+    document_list()
 
-        # Document list
-        document_list()
+    st.divider()
 
-    with col2:
-        # Document viewer
-        document_viewer()
+    # Document viewer
+    document_viewer()
 
-        st.divider()
+    st.divider()
 
-        # Document search
-        document_search()
+    # Document search
+    document_search()

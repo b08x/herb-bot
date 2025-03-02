@@ -39,6 +39,7 @@ def display_chat_message(role: str, content: str, is_user: bool):
 
 def display_chat_history():
     """Display the chat history in the Streamlit interface."""
+    # Reverse the order of messages for display so newest messages are at the bottom
     for message in st.session_state.messages:
         display_chat_message(
             message["role"], message["content"], message["role"] == "user"
@@ -137,14 +138,19 @@ def chat_interface():
     # Initialize chat state
     initialize_chat_state()
 
-    # Display chat history
+    # Display chat history above the input
     display_chat_history()
 
-    # Chat input
-    if user_input := st.chat_input("Ask about herbalism..."):
+    # Chat input at the bottom
+    user_input = st.chat_input("Ask about herbalism...")
+
+    # Process user input if provided
+    if user_input and "last_input" not in st.session_state:
+        # Store the current input to prevent duplicate processing
+        st.session_state.last_input = user_input
+
         # Add user message to chat
         add_user_message(user_input)
-        display_chat_message("user", user_input, True)
 
         with st.spinner("Thinking..."):
             # Generate response
@@ -152,7 +158,13 @@ def chat_interface():
 
             # Add assistant message to chat
             add_assistant_message(response)
-            display_chat_message("assistant", response, False)
+
+            # Rerun to update the chat display
+            st.rerun()
+
+    # Clear the last input after processing to allow new inputs
+    elif "last_input" in st.session_state:
+        del st.session_state.last_input
 
 
 def system_prompt_editor():

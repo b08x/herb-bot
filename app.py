@@ -83,7 +83,7 @@ def custom_css():
         """
     <style>
     .stApp {
-        max-width: 1200px;
+        max-width: -webkit-fill-available;
         margin: 0 auto;
     }
     
@@ -142,6 +142,31 @@ def custom_css():
     .sidebar .sidebar-content {
         background-color: #f9f9f9;
     }
+    
+    /* Right sidebar styling */
+    [data-testid="stSidebar"] {
+        background-color: darkslategray;
+    }
+    
+    /* Make document section in right sidebar more compact */
+    [data-testid="stVerticalBlock"] > div:nth-child(2) h3 {
+        margin-top: 0;
+        margin-bottom: 0.5rem;
+    }
+    
+    /* Improve chat layout */
+    .stChatInputContainer {
+        position: sticky;
+        bottom: 0;
+        background-color: white;
+        padding-top: 1rem;
+        border-top: 1px solid #f0f0f0;
+        z-index: 100;
+    }
+    
+    .stChatMessageContent {
+        padding: 0.75rem;
+    }
     </style>
     """,
         unsafe_allow_html=True,
@@ -197,33 +222,41 @@ def main():
     # Check API keys
     api_keys_valid = check_api_keys()
 
-    # Create tabs
-    tabs = st.tabs(["Chat", "Documents", "Search", "Visualizations", "Settings"])
+    # Create a layout with main content and right sidebar
+    main_col, right_sidebar = st.columns([3, 1])
 
-    # Render tabs
-    with tabs[0]:
-        if api_keys_valid or not GEMINI_API_KEY:
-            render_chat_tab()
-        else:
-            st.error("Chat functionality requires API keys to be set.")
+    with main_col:
+        # Create tabs for the main content area
+        tabs = st.tabs(["Chat", "Search", "Visualizations", "Settings"])
 
-    with tabs[1]:
+        # Render tabs
+        with tabs[0]:
+            if api_keys_valid or not GEMINI_API_KEY:
+                render_chat_tab()
+            else:
+                st.error("Chat functionality requires API keys to be set.")
+
+        with tabs[1]:
+            if api_keys_valid or not (
+                GOOGLE_SEARCH_API_KEY and GOOGLE_SEARCH_ENGINE_ID
+            ):
+                render_search_tab()
+            else:
+                st.error("Search functionality requires API keys to be set.")
+
+        with tabs[2]:
+            render_visualization_tab()
+
+        with tabs[3]:
+            if api_keys_valid or not GEMINI_API_KEY:
+                render_chat_settings_tab()
+            else:
+                st.error("Settings functionality requires API keys to be set.")
+
+    # Right sidebar for documents
+    with right_sidebar:
+        st.markdown("### Documents")
         render_document_upload_tab()
-
-    with tabs[2]:
-        if api_keys_valid or not (GOOGLE_SEARCH_API_KEY and GOOGLE_SEARCH_ENGINE_ID):
-            render_search_tab()
-        else:
-            st.error("Search functionality requires API keys to be set.")
-
-    with tabs[3]:
-        render_visualization_tab()
-
-    with tabs[4]:
-        if api_keys_valid or not GEMINI_API_KEY:
-            render_chat_settings_tab()
-        else:
-            st.error("Settings functionality requires API keys to be set.")
 
 
 if __name__ == "__main__":
