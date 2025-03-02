@@ -166,7 +166,15 @@ def chat_settings():
     st.subheader("Chat Settings")
 
     # Model selection
-    available_models = ["gemini-1.5-pro", "gemini-1.5-flash", "gemini-1.0-pro"]
+    available_models = [
+        "models/gemini-2.0-flash",
+        "models/gemini-2.0-pro-exp-02-0",
+        "models/gemini-2.0-flash-thinking-exp-01-21",
+        "models/learnlm-1.5-pro-experimental",
+        "models/gemini-1.5-pro",
+        "models/gemini-1.5-flash",
+        "models/gemini-1.0-pro",
+    ]
     selected_model = st.selectbox("Model", options=available_models, index=0)
 
     # Temperature slider

@@ -32,7 +32,7 @@ except ImportError as e:
 class GeminiService:
     """Service for interacting with Google's Gemini API."""
 
-    def __init__(self, model_name: str = "gemini-1.5-pro"):
+    def __init__(self, model_name: str = "models/gemini-2.0-flash"):
         """
         Initialize the Gemini service.
 
@@ -43,6 +43,7 @@ class GeminiService:
         self.model = None
         self.system_prompt = None
         self.api_available = GEMINI_API_AVAILABLE
+        self.embedding_model = "models/text-embedding-004"
 
         if self.api_available:
             try:
